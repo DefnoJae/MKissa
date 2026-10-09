@@ -1,6 +1,6 @@
 # MKissa for Seanime
 
-Standalone online streaming provider for https://mkissa.to/anime. Version **0.2.0** uses direct HTTP requests inside Seanime. No Chrome, Edge launcher, FlareSolverr, Node installation, or separately running helper service is needed to use it.
+Standalone online streaming provider for https://mkissa.to/anime. Version **0.2.1** uses direct HTTP requests inside Seanime. No Chrome, Edge launcher, FlareSolverr, Node installation, or separately running helper service is needed to use it.
 
 ## Install or update
 
