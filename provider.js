@@ -14,7 +14,12 @@ class Provider {
 
     async withBrowser(url, work) {
         if (typeof ChromeDP === "undefined") throw new Error("MKissa requires Seanime ChromeDP and installed Chrome/Chromium.");
-        const browser = await ChromeDP.newBrowser({ timeout: 120 });
+        let browser;
+        try {
+            browser = await ChromeDP.newBrowser({ timeout: 120 });
+        } catch (error) {
+            throw new Error("MKissa could not start its browser. On Windows, fully quit Seanime and run windows/Start-Seanime-With-Edge.cmd to use existing Edge. Original error: " + String(error));
+        }
         try {
             await browser.navigate(url);
             return await work(browser);
