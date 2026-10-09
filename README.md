@@ -1,50 +1,47 @@
-# MKissa for Seanime (experimental)
+# MKissa for Seanime
 
-Online streaming provider for https://mkissa.to/anime with separate sub/dub results and Fm-Hls, Mp4, and Ok server selections.
+Standalone online streaming provider for https://mkissa.to/anime. Version **0.2.0** uses direct HTTP requests inside Seanime. No Chrome, Edge launcher, FlareSolverr, Node installation, or separately running helper service is needed to use it.
 
-## Status
+## Install or update
 
-Experimental: rendered Naruto search results, anime details, episode links, and server tabs were inspected on the live site. Seanime runtime playback has **not** been verified. A sample MP4 host reported that its file had been deleted. Do not treat this release as confirmed working playback.
+In **Seanime → Extensions**, add this manifest URL:
 
-MKissa's direct API returned a Cloudflare challenge during development, and the site scripts implement encrypted API responses. This provider uses the site's rendered pages and observes media requests through Seanime's ChromeDP API rather than hardcoding encryption keys or build IDs.
+https://raw.githubusercontent.com/DefnoJae/MKissa/main/Manifest.json
 
-## Requirements and installation
+If MKissa is already installed, use Seanime's extension update action. If your version does not offer that action, remove the old MKissa extension and add the same URL again. Then open an anime's online streaming section, choose MKissa, and refresh the episode list. Use **Auto** as the server.
 
-Use a Seanime version providing `ChromeDP.newBrowser`, `listenTarget`, and `executeCDP`. ChromeDP is experimental in Seanime. Browser startup makes this provider slower than a direct API provider.
+The old browser launcher from versions 0.1.x is obsolete. Start Seanime normally.
 
-### Windows: use your existing Edge without installing Chrome
+## Behavior
 
-1. Download and extract the repository ZIP (or the supplied provider ZIP).
-2. Fully quit Seanime, including its tray icon.
-3. Double-click `windows/Start-Seanime-With-Edge.cmd`.
-4. Refresh MKissa's episode list in Seanime.
-
-The launcher compiles the included `EdgeBridge.cs` using Windows' existing .NET Framework compiler, then starts Seanime Denshi with a temporary PATH entry. The bridge is named `chrome.exe` for ChromeDP discovery, but forwards the arguments to the installed Microsoft Edge executable. It preserves the browser's debugging output and uses a Windows job object to clean up browser processes. It does not install Chrome, replace Edge, edit your system PATH, or use your normal Edge profile. ChromeDP supplies its own temporary profile. Use this launcher each time you want MKissa to use Edge.
-
-The launcher defaults to `C:\Program Files\Seanime Denshi\Seanime Denshi.exe`. For other locations, run `windows/Start-Seanime-With-Edge.ps1 -SeanimePath 'C:\path\to\seanime.exe'` from PowerShell. Do not disable a managed script policy if it blocks execution. The included scripts and generated executable are local, unsigned code.
-
-The bridge compiles successfully and its argument forwarding, output forwarding, and exit status are tested. Live MKissa playback through Edge in Seanime remains unverified. This workaround addresses browser discovery; it does not establish that the streaming hosts will play.
-
-For local testing, open **Extensions → Playground**, select **Online Streaming Provider**, and paste `provider.js`. Test `search`, `findEpisodes`, and `findEpisodeServer` in that order. Keep IDs exactly as returned: the language is included in each ID. Test sub and dub, a long series, and each available server.
-
-Add this manifest URL through Seanime's **Add extensions**:
-
-`https://raw.githubusercontent.com/DefnoJae/MKissa/main/Manifest.json`
-
-The manifest embeds the provider code, so it can also be imported as a local JSON file if your Seanime version supports that.
+- Seanime's sub/dub selection is included in every show and episode ID. Search filters actual availability for the selected audio mode and prefers an AniList ID match.
+- Search follows pagination. Episode lists come from MKissa's complete `availableEpisodesDetail` arrays, preserving gaps and original integer numbering. Fractional specials are omitted because Seanime uses integer episode numbers.
+- Playback implements the signing, bootstrap and authenticated AES-256-GCM response protocol used by MKissa's public client build 179. Public client constants are included in the provider; there are no account credentials or user cookies. Epoch keys are fetched for each request and are not stored on disk.
+- **Auto** tries Ok first, then Default, then Mp4 and other supplied sources. Explicit server selections never silently switch to another host.
+- Default's encoded source identifiers are decoded and requested through MKissa's public `filelotion.fyi` player-wrapper API. Returned HLS masters are preserved.
+- Ok's structured player metadata provides its original HLS master and MP4 quality choices. Direct media URLs and plain/packed JWPlayer-style embeds are supported. The original HLS master is retained so the player can discover embedded renditions.
+- Remote scripts are parsed as data and never executed by the provider. The development inspection scripts are not part of the installed extension.
 
 ## Limits
 
-- Only the first rendered search page is returned.
-- Episode numbers remain as listed; decimal specials are excluded because Seanime expects integer episode numbers.
-- Browser challenges, deleted host files, and player interaction requirements can prevent playback. Select another server when one fails.
-- Playback currently captures direct HLS/MP4 requests. It does not return embedded player HTML as a video source. External subtitle extraction is not implemented.
-- Some hosts require a persistent browser session or expiring URLs; extracted links may fail after the browser closes.
-- Long series and cross-origin player frames need real Seanime verification; the provider throws if its bounded episode-loading loop cannot settle.
-- The browser closes on success and failure. No user cookies, login credentials, or keys are stored in the extension.
+MKissa can change its public build and signing protocol. If bootstrap or signing fails after a site update, the extension may need an update. Failed authentication tags are rejected rather than accepting unverified plaintext.
 
-## Local checks
+Some episodes have deleted files or unsupported players. Modern Byse/Filemoon (**Fm-Hls**) pages currently require an additional host-specific resolver and may fail; Auto can try another source when one is available. External subtitle extraction is not implemented. Content protection tied to IP, expiring URLs, host outages, and regional restrictions can still affect playback.
 
-Run `node --test tests/provider.test.cjs`. These checks cover IDs, language separation, episode normalization, error paths, and browser cleanup using mocks. They do not establish live playback compatibility.
+## Verification
 
-To regenerate the embedded manifest after editing `provider.js`, run `node build.cjs`.
+Development checks (Node is for development only):
+
+```sh
+node build.cjs
+node --test tests/provider.test.cjs
+node tests/live.cjs
+```
+
+Ten local tests cover crypto against Node's standard implementations, altered authentication tags, audio separation, gap preservation, request signing, Ok and Default extraction, fallback boundaries, and error paths. Live checks cover sub/dub search and complete Naruto episode listings, signed episode source retrieval, and HLS master requests. Video segments are not downloaded. Playback inside the Seanime UI has not been verified.
+
+Verified on October 9, 2026 (America/Jamaica): 28 sub search matches, 20 dub search matches, 220 Naruto episodes in each mode, sub playback via Ok, dub playback via Default, and both HLS master requests succeeded. This confirms direct provider requests and stream extraction, not rendered playback in Seanime.
+
+## Files
+
+`provider.js` and `Manifest.json` are generated from `crypto.js` and `provider.core.js` by `build.cjs`. The manifest embeds the complete standalone JavaScript payload.
