@@ -27,7 +27,13 @@ test('Base64 matches Node without browser globals',()=>{
 test('search uses POST, filters audio availability and prefers AniList match',async()=>{
  const calls=[];
  const {provider}=load(async(url,opts)=>{calls.push({url,opts});return {ok:true,json:async()=>({data:{shows:{pageInfo:{total:3},edges:[{_id:'a',name:'A',aniListId:2,availableEpisodes:{dub:2}},{_id:'b',name:'B',aniListId:1,availableEpisodes:{sub:2,dub:0}},{_id:'c',name:'C',aniListId:1,availableEpisodes:{dub:1}}]}}})};});
- const results=await provider.search({query:'test',dub:true,media:{id:1}});assert.equal(calls[0].opts.method,'POST');assert.equal(JSON.parse(calls[0].opts.body).variables.translationType,'dub');assert.deepEqual(plain(results.map(r=>r.id)),['c|dub','a|dub']);
+ const results=await provider.search({query:'test',dub:true,media:{id:1}});assert.equal(calls[0].opts.method,'POST');assert.equal(JSON.parse(calls[0].opts.body).variables.translationType,'dub');assert.deepEqual(plain(results.map(r=>r.id)),['c|dub']);
+});
+test('automatic matching handles string AniList IDs and excludes a different season',async()=>{
+ const {provider}=load();provider.graphql=async()=>({shows:{pageInfo:{total:2},edges:[{_id:'old',name:'Season 2',aniListId:'116742',availableEpisodes:{dub:12}},{_id:'correct',name:'Season 4',aniListId:'182205',availableEpisodes:{dub:24}}]}});
+ assert.deepEqual(plain((await provider.search({query:'Slime',dub:true,media:{id:182205}})).map(r=>r.id)),['correct|dub']);
+ assert.equal((await provider.search({query:'Slime',dub:true,media:{}})).length,2);
+ assert.equal((await provider.search({query:'Slime',dub:true,media:{id:999}})).length,2);
 });
 test('episodes preserve gaps, exclude decimals, deduplicate and separate audio',async()=>{
  const {provider}=load();provider.graphql=async()=>({show:{availableEpisodesDetail:{sub:['3','1','1','2.5','0'],dub:['2']}}});

@@ -195,7 +195,13 @@ class Provider {
                 results.push({id:item._id+'|'+mode,title:item.name||item.englishName||item._id,url:this.base+'/anime/'+item._id,subOrDub:mode,metadata:{anilistId:item.aniListId}});
             }
             const total=Number(data.shows.pageInfo&&data.shows.pageInfo.total);
-            if(edges.length<40||Number.isFinite(total)&&page*40>=total)return results.sort((a,b)=>Number(b.metadata.anilistId===opts.media?.id)-Number(a.metadata.anilistId===opts.media?.id));
+            if(edges.length<40||Number.isFinite(total)&&page*40>=total){
+                // Seanime matches titles again and ignores metadata. Restrict automatic
+                // searches to the exact series when MKissa supplies its AniList ID.
+                const mediaId=Number(opts.media&&opts.media.id);
+                const exact=Number.isInteger(mediaId)&&mediaId>0?results.filter(r=>Number(r.metadata.anilistId)===mediaId):[];
+                return exact.length?exact:results;
+            }
         }
         throw new Error('MKissa search pagination exceeded its limit');
     }
