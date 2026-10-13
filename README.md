@@ -1,6 +1,6 @@
 # MKissa for Seanime
 
-Standalone online streaming provider for https://mkissa.to/anime. Version **0.2.2** uses direct HTTP requests inside Seanime. No Chrome, Edge launcher, FlareSolverr, Node installation, or separately running helper service is needed to use it.
+Standalone online streaming provider for https://mkissa.to/anime. Version **0.2.3** uses direct HTTP requests inside Seanime. No Chrome, Edge launcher, FlareSolverr, Node installation, or separately running helper service is needed to use it. Site verification can still block requests.
 
 ## Install or update
 
@@ -24,6 +24,14 @@ The old browser launcher from versions 0.1.x is obsolete. Start Seanime normally
 
 ## Limits
 
+### Site verification
+
+Version 0.2.3 bundles challenge detection from [Seanime Verify](https://github.com/DefnoJae/Seanime-Verify). `NEED_CAPTCHA`, supported verification codes, and Cloudflare challenge HTML now produce a specific verification error instead of an unexplained HTTP failure. Bootstrap stops immediately on verification rather than trying another signing epoch. Raw API errors are not echoed; stale signing still gets its existing retry.
+
+This is **not a CAPTCHA solver**. If MKissa requires verification, open its official site, complete any challenge it presents, and retry the episode in Seanime. Browser authorization may not carry over to Seanime or may expire. The optional Seanime Verify diagnostic plugin does not share browser cookies or automatically unlock playback.
+
+A live source request in the user's Seanime 3.10.3 on 13 October 2026 returned `NEED_CAPTCHA`. Playback and moving to the next episode have not been reverified for this release.
+
 MKissa can change its public build and signing protocol. If bootstrap or signing fails after a site update, the extension may need an update. Failed authentication tags are rejected rather than accepting unverified plaintext.
 
 Some episodes have deleted files or unsupported players. Modern Byse/Filemoon (**Fm-Hls**) pages currently require an additional host-specific resolver and may fail; Auto can try another source when one is available. External subtitle extraction is not implemented. Content protection tied to IP, expiring URLs, host outages, and regional restrictions can still affect playback.
@@ -38,10 +46,10 @@ node --test tests/provider.test.cjs
 node tests/live.cjs
 ```
 
-Ten local tests cover crypto against Node's standard implementations, altered authentication tags, audio separation, gap preservation, request signing, Ok and Default extraction, fallback boundaries, and error paths. Live checks cover sub/dub search and complete Naruto episode listings, signed episode source retrieval, and HLS master requests. Video segments are not downloaded. Playback inside the Seanime UI has not been verified.
+Thirteen local tests cover crypto against Node's standard implementations, altered authentication tags, audio separation, gap preservation, request signing, Ok and Default extraction, fallback boundaries, and verification/error paths. Historical live checks cover sub/dub search and complete Naruto episode listings, signed episode source retrieval, and HLS master requests. Video segments are not downloaded by the development test. Playback inside the Seanime UI has not been verified for version 0.2.3.
 
 Verified on October 9, 2026 (America/Jamaica): 28 sub search matches, 20 dub search matches, 220 Naruto episodes in each mode, sub playback via Ok, dub playback via Default, and both HLS master requests succeeded. This confirms direct provider requests and stream extraction, not rendered playback in Seanime.
 
 ## Files
 
-`provider.js` and `Manifest.json` are generated from `crypto.js` and `provider.core.js` by `build.cjs`. The manifest embeds the complete standalone JavaScript payload.
+`provider.js` and `Manifest.json` are generated from `vendor/verify.js`, `crypto.js` and `provider.core.js` by `build.cjs`. The manifest embeds the complete standalone JavaScript payload. To refresh the shared detection code during development, run `node build.cjs ../Seanime-Verify` with that repository alongside MKissa. Normal builds use the checked-in copy.

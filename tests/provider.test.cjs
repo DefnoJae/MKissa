@@ -41,7 +41,7 @@ test('episodes preserve gaps, exclude decimals, deduplicate and separate audio',
 });
 test('signed query matches Node decryption and authenticated response is decoded',async()=>{
  const {provider,C}=load();let body;const key=Array.from(crypto.randomBytes(32));provider.bootstrap=async()=>({epoch:2962,key});
- provider.request=async(url,options)=>{body=JSON.parse(options.body);const qh=crypto.createHash('sha256').update(body.query).digest('hex'),packed=Buffer.from(body.extensions.aaReq,'base64'),d=crypto.createDecipheriv('aes-256-gcm',Buffer.from(key),packed.subarray(1,13));d.setAuthTag(packed.subarray(-16));const signed=JSON.parse(Buffer.concat([d.update(packed.subarray(13,-16)),d.final()]).toString());assert.equal(signed.qh,qh);assert.equal(signed.k,'k7');const iv=Array(12).fill(0);return {json:async()=>({data:{tobeparsed:C.base64([1].concat(iv,C.gcm(key,iv,C.utf8('{"episode":{"sourceUrls":[]}}'),false)))}})};};
+ provider.request=async(url,options)=>{body=JSON.parse(options.body);const qh=crypto.createHash('sha256').update(body.query).digest('hex'),packed=Buffer.from(body.extensions.aaReq,'base64'),d=crypto.createDecipheriv('aes-256-gcm',Buffer.from(key),packed.subarray(1,13));d.setAuthTag(packed.subarray(-16));const signed=JSON.parse(Buffer.concat([d.update(packed.subarray(13,-16)),d.final()]).toString());assert.equal(signed.qh,qh);assert.equal(signed.k,'k7');const iv=Array(12).fill(0);return {ok:true,json:async()=>({data:{tobeparsed:C.base64([1].concat(iv,C.gcm(key,iv,C.utf8('{"episode":{"sourceUrls":[]}}'),false)))}})};};
  assert.deepEqual(plain(await provider.graphql('query{episode(showId:"abc"){sourceUrls}}',{},true)),{episode:{sourceUrls:[]}});assert.equal(body.extensions.k,'k7');
 });
 test('Ok metadata preserves master and MP4 URLs with explicit types',async()=>{
@@ -53,6 +53,16 @@ test('Auto falls back but explicit server selection never changes hosts',async()
 });
 test('missing server, HTTP errors and invalid episode IDs fail explicitly',async()=>{
  const {provider}=load(async()=>({ok:false,status:403}));await assert.rejects(provider.search({query:'test'}),/HTTP 403/);await assert.rejects(provider.findEpisodeServer({id:'abc|sub|../1'},'default'),/Invalid/);provider.graphql=async()=>({episode:{sourceUrls:[]}});await assert.rejects(provider.findEpisodeServer({id:'abc|dub|2'},'Mp4'),/no matching server/);
+});
+test('verification is reported explicitly, without stale-signing retries or raw secrets',async()=>{
+ const {provider}=load(async()=>({ok:true,json:async()=>({errors:[{message:'NEED_CAPTCHA',extensions:{wireSecret:'hidden'}}]})}));
+ let calls=0;provider.bootstrap=async()=>{calls++;return {epoch:1,key:Array(32).fill(0)};};
+ await assert.rejects(provider.graphql('query{episode}',{},true),e=>e.code==='VERIFICATION_REQUIRED'&&e.message.includes('https://mkissa.to/anime')&&!e.message.includes('hidden'));
+ assert.equal(calls,1);
+});
+test('bootstrap preserves verification errors and does not retry the challenge',async()=>{
+ let calls=0;const {provider}=load(async()=>{calls++;return {ok:false,status:403,text:async()=>'<title>Just a moment</title>'};});
+ await assert.rejects(provider.bootstrap(),e=>e.code==='VERIFICATION_REQUIRED');assert.equal(calls,1);
 });
 test('Default encoded source resolves via the public wrapper and keeps the HLS master',async()=>{
  const route='/apivtwo/clock?id=test',encoded='--'+Buffer.from(route).map(b=>b^56).toString('hex');let requested;

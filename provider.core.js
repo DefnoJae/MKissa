@@ -9,7 +9,8 @@ class Provider {
     getSettings(){return {episodeServers:['Auto','Ok','Default','Mp4','Fm-Hls'],supportsDub:true};}
     async request(url,options){
         const response=await fetch(url,Object.assign({timeout:25},options||{}, {headers:Object.assign({'User-Agent':'Mozilla/5.0',Referer:this.base+'/',Origin:this.base},options&&options.headers||{})}));
-        if(!response.ok)throw new Error('MKissa request failed: HTTP '+response.status);
+        if(url.startsWith(this.api+'/')||url.startsWith(this.base+'/'))await SeanimeVerify.assertResponse(response,'mkissa');
+        else if(!response.ok)throw new Error('MKissa request failed: HTTP '+response.status);
         return response;
     }
     async bootstrap(){
@@ -21,10 +22,10 @@ class Provider {
                 const intermediate=C.hmac(this.mask,C.utf8('KoCGqjW:'+this.build));
                 const signature=C.hex(C.hmac(intermediate,C.utf8(this.build+'|mkissa|k7|'+epoch+'|mkissa.to')));
                 const response=await this.request(this.api+'/client-crypto/v1/bootstrap?buildId='+this.build+'&k=k7',{headers:{'x-build-id':this.build,'x-aa-boot':signature}});
-                const data=await response.json(),part=C.unbase64(data.partB);
+                const data=await SeanimeVerify.json(response,'mkissa'),part=C.unbase64(data.partB);
                 if(data.k!=='k7'||!Number.isInteger(data.epoch)||part.length!==32)throw new Error('MKissa bootstrap format changed');
                 return {epoch:data.epoch,key:part.map((b,i)=>b^this.mask[i])};
-            }catch(error){failure=error;}
+            }catch(error){if(error.code==='VERIFICATION_REQUIRED')throw error;failure=error;}
         }
         throw new Error('MKissa playback protocol is unavailable or its public client changed. '+failure.message);
     }
@@ -41,11 +42,11 @@ class Provider {
                 body.extensions={persistedQuery:{version:1,sha256Hash:qh},k:'k7',aaReq:C.base64([1].concat(iv,C.gcm(session.key,iv,message,false)))};
                 headers['x-build-id']=this.build;
             }
-            const data=await (await this.request(this.api+'/api',{method:'POST',headers,body:JSON.stringify(body)})).json();
+            const data=await SeanimeVerify.json(await this.request(this.api+'/api',{method:'POST',headers,body:JSON.stringify(body)}),'mkissa');
             if(data.errors&&data.errors.length){
-                const message=data.errors.map(e=>e.message).join('; ');
-                if(secured&&attempt===0&&/AA_CRYPTO_(?:STALE|EXPIRED|BUILD_MISMATCH)/.test(message))continue;
-                throw new Error('MKissa API: '+message);
+                const error=SeanimeVerify.apiError(data,'mkissa');
+                if(secured&&attempt===0&&error.code==='SIGNING_STALE')continue;
+                throw error;
             }
             if(!data.data)throw new Error('MKissa API returned no data');
             if(typeof data.data.tobeparsed==='string'){

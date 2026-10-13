@@ -1,3 +1,68 @@
+// Shared provider code, bundled at build time. No remote code execution or service.
+class SeanimeVerify {
+    static site(id) {
+        const sites = {
+            mkissa: { name: 'MKissa', url: 'https://mkissa.to/anime' },
+            nexus: { name: 'Anime Nexus', url: 'https://anime.nexus/' }
+        };
+        if (!Object.prototype.hasOwnProperty.call(sites, id)) throw new Error('Unsupported verification provider');
+        return sites[id];
+    }
+    static required(id) {
+        const site = this.site(id);
+        const error = new Error(site.name + ': site verification is required. Open ' + site.url +
+            ' and complete any verification the site presents, then retry in Seanime. Browser verification may not authorize Seanime requests.');
+        error.code = 'VERIFICATION_REQUIRED';
+        error.provider = id;
+        return error;
+    }
+    static isChallenge(text) {
+        return typeof text === 'string' && /__CF\$cv\$params|\/cdn-cgi\/challenge-platform\/|cf-chl-|<title>\s*Just a moment/i.test(text);
+    }
+    static needsVerification(data) {
+        const codes = ['NEED_CAPTCHA', 'TURNSTILE_REQUIRED', 'TURNSTILE_FAILED', 'FALLBACK_REQUIRED', 'ALTCHA_REQUIRED', 'VERIFICATION_REQUIRED'];
+        if (!data || typeof data !== 'object') return false;
+        if (codes.includes(data.code)) return true;
+        return Array.isArray(data.errors) && data.errors.some(error => error &&
+            (codes.includes(error.code) || codes.includes(error.extensions && error.extensions.code) ||
+             (typeof error.message === 'string' && /\b(?:NEED_CAPTCHA|TURNSTILE_REQUIRED|VERIFICATION_REQUIRED)\b/.test(error.message))));
+    }
+    static apiError(data, id) {
+        if (this.needsVerification(data)) return this.required(id);
+        const site = this.site(id);
+        const stale = data && Array.isArray(data.errors) && data.errors.some(error =>
+            error && typeof error.message === 'string' && /\bAA_CRYPTO_(?:STALE|EXPIRED|BUILD_MISMATCH)\b/.test(error.message));
+        const error = new Error(site.name + ': ' + (stale ? 'AA_CRYPTO_STALE; signing must be refreshed.' : 'upstream API rejected the request.'));
+        error.code = stale ? 'SIGNING_STALE' : 'UPSTREAM_API_ERROR';
+        return error;
+    }
+    static async assertResponse(response, id) {
+        if (response.ok) return;
+        let text = '';
+        try { if (typeof response.text === 'function') text = await response.text(); } catch (_) {}
+        let data;
+        try { data = JSON.parse(text); } catch (_) {}
+        if (this.isChallenge(text) || this.needsVerification(data)) throw this.required(id);
+        const error = new Error(this.site(id).name + ': request failed (HTTP ' + response.status + ').');
+        error.code = 'UPSTREAM_HTTP_ERROR';
+        throw error;
+    }
+    static async json(response, id) {
+        await this.assertResponse(response, id);
+        let data;
+        if (typeof response.text === 'function') {
+            const text = await response.text();
+            if (this.isChallenge(text)) throw this.required(id);
+            try { data = JSON.parse(text); } catch (_) { throw new Error(this.site(id).name + ': upstream returned invalid JSON.'); }
+        } else {
+            try { data = await response.json(); } catch (_) { throw new Error(this.site(id).name + ': upstream returned invalid JSON.'); }
+        }
+        if (this.needsVerification(data)) throw this.required(id);
+        return data;
+    }
+}
+
+
 // Byte-oriented SHA-256, HMAC and AES-256-GCM for Seanime's JS runtime.
 // No browser WebCrypto dependency. GCM decrypt verifies the authentication tag.
 class MKissaCrypto {
@@ -127,7 +192,8 @@ class Provider {
     getSettings(){return {episodeServers:['Auto','Ok','Default','Mp4','Fm-Hls'],supportsDub:true};}
     async request(url,options){
         const response=await fetch(url,Object.assign({timeout:25},options||{}, {headers:Object.assign({'User-Agent':'Mozilla/5.0',Referer:this.base+'/',Origin:this.base},options&&options.headers||{})}));
-        if(!response.ok)throw new Error('MKissa request failed: HTTP '+response.status);
+        if(url.startsWith(this.api+'/')||url.startsWith(this.base+'/'))await SeanimeVerify.assertResponse(response,'mkissa');
+        else if(!response.ok)throw new Error('MKissa request failed: HTTP '+response.status);
         return response;
     }
     async bootstrap(){
@@ -139,10 +205,10 @@ class Provider {
                 const intermediate=C.hmac(this.mask,C.utf8('KoCGqjW:'+this.build));
                 const signature=C.hex(C.hmac(intermediate,C.utf8(this.build+'|mkissa|k7|'+epoch+'|mkissa.to')));
                 const response=await this.request(this.api+'/client-crypto/v1/bootstrap?buildId='+this.build+'&k=k7',{headers:{'x-build-id':this.build,'x-aa-boot':signature}});
-                const data=await response.json(),part=C.unbase64(data.partB);
+                const data=await SeanimeVerify.json(response,'mkissa'),part=C.unbase64(data.partB);
                 if(data.k!=='k7'||!Number.isInteger(data.epoch)||part.length!==32)throw new Error('MKissa bootstrap format changed');
                 return {epoch:data.epoch,key:part.map((b,i)=>b^this.mask[i])};
-            }catch(error){failure=error;}
+            }catch(error){if(error.code==='VERIFICATION_REQUIRED')throw error;failure=error;}
         }
         throw new Error('MKissa playback protocol is unavailable or its public client changed. '+failure.message);
     }
@@ -159,11 +225,11 @@ class Provider {
                 body.extensions={persistedQuery:{version:1,sha256Hash:qh},k:'k7',aaReq:C.base64([1].concat(iv,C.gcm(session.key,iv,message,false)))};
                 headers['x-build-id']=this.build;
             }
-            const data=await (await this.request(this.api+'/api',{method:'POST',headers,body:JSON.stringify(body)})).json();
+            const data=await SeanimeVerify.json(await this.request(this.api+'/api',{method:'POST',headers,body:JSON.stringify(body)}),'mkissa');
             if(data.errors&&data.errors.length){
-                const message=data.errors.map(e=>e.message).join('; ');
-                if(secured&&attempt===0&&/AA_CRYPTO_(?:STALE|EXPIRED|BUILD_MISMATCH)/.test(message))continue;
-                throw new Error('MKissa API: '+message);
+                const error=SeanimeVerify.apiError(data,'mkissa');
+                if(secured&&attempt===0&&error.code==='SIGNING_STALE')continue;
+                throw error;
             }
             if(!data.data)throw new Error('MKissa API returned no data');
             if(typeof data.data.tobeparsed==='string'){

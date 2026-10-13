@@ -1,10 +1,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const base = 'https://raw.githubusercontent.com/DefnoJae/MKissa/main/';
-const payload = ['crypto.js', 'provider.core.js'].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n\n');
+if (process.argv[2]) fs.copyFileSync(path.resolve(process.argv[2], 'src/verify.js'), path.join(__dirname, 'vendor/verify.js'));
+const payload = ['vendor/verify.js', 'crypto.js', 'provider.core.js'].map(file => fs.readFileSync(path.join(__dirname, file), 'utf8')).join('\n\n');
 fs.writeFileSync(path.join(__dirname, 'provider.js'), payload);
 const manifest = {
-    id: 'mkissa', name: 'MKissa', version: '0.2.2', author: 'DefnoJae',
+    id: 'mkissa', name: 'MKissa', version: '0.2.3', author: 'DefnoJae',
     description: 'MKissa anime streaming provider with direct API requests. No browser or launcher required.',
     type: 'onlinestream-provider', language: 'javascript', lang: 'en',
     manifestURI: base + 'Manifest.json', readme: base + 'README.md',
